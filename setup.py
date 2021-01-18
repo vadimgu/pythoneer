@@ -24,4 +24,7 @@ setuptools.setup(
             "pythoneer=pythoneer.__main__:main",
         ],
     },
+    install_requires=[
+        "astor",
+    ],
 )
