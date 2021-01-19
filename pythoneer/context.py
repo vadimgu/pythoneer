@@ -68,7 +68,6 @@ class Context:
     @classmethod
     def from_function(cls, func: ast.FunctionDef, namespace: dict = {}):
         """
-        >>> import ast
         >>> f =  ast.parse('def f(a: int, b: str): ...').body[0]
         >>> ctx = Context.from_function(f, {})  # doctest: +ELLIPSIS
         >>> len(ctx.expressions)
@@ -146,7 +145,7 @@ class Context:
 
     def groupby_type(
         self, exclude: Tuple[Type, ...] = ()
-    ) -> Iterator[Tuple[Type, Sequence[AnnotatedExpression]]]:
+    ) -> Iterator[Tuple[Type, List[AnnotatedExpression]]]:
         """
         Groups expressions by type and generates tuples of type and annotated expressions.
 

@@ -6,7 +6,6 @@ from pythoneer.validation import DoctestValidator
 from typing import (
     Iterator,
     Iterable,
-    Callable,
     List,
     MutableSequence,
     Mapping,
@@ -42,7 +41,6 @@ class SearchBoundary:
         """
         Tests if a `function` crosses any search boundary.
 
-        >>> import ast
         >>> f = Function(ast.FunctionDef, complexity=3, nesting=2)
         >>> SearchBoundary(max_complexity=1, max_nesting=2).crossed_by(f)
         True
@@ -82,7 +80,6 @@ class Options:
         """
         Find the first ast.Dict expression. And build the Options instance.
 
-        >>> import ast
         >>> f = '''
         ... def x():
         ...     "docstring here"
@@ -95,7 +92,7 @@ class Options:
         2
         """
         for stmt in funcdef.body:
-            if type(stmt) == ast.Expr and type(stmt.value) == ast.Dict:
+            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Dict):
                 return cls(**eval(compile_expr(stmt.value), globals))
         return cls()
 
@@ -138,7 +135,7 @@ class Programmer(Iterable):
         ...    a = [1, 2]  # type: List[int]
         ... '''
         >>> Programmer.parse(module, '<test>', 'x')  # doctest: +ELLIPSIS
-        <programmer.Programmer ...>
+        <...Programmer ...>
         """
         module = Module.from_string(source, filename)
         function_stmt = module.find_function(name)
@@ -161,7 +158,7 @@ class Programmer(Iterable):
         ...    a = [1, 2]  # type: List[int]
         ... '''
         >>> Programmer.from_stream(StringIO(module), '<test>', 'x')  # doctest: +ELLIPSIS
-        <programmer.Programmer ...>
+        <....Programmer ...>
         """
         source = source_stream.read()
         return cls.parse(source, filename, name)
@@ -169,7 +166,7 @@ class Programmer(Iterable):
     @classmethod
     def from_file(cls, filename: str, name: str):
         with open(filename, "r") as fd:
-            return cls(fd, filename, name)
+            return cls.from_stream(fd, filename, name)
 
     @property
     @lru_cache(maxsize=None)
@@ -178,7 +175,7 @@ class Programmer(Iterable):
         The return value that allows for return assignment and return
         statement handling
 
-        >>> p = Programmer.parse('def x() -> int: pass', '<test>', 'x')
+        >>> p = Programmer.parse('def x(a:int) -> int: pass', '<test>', 'x')
         >>> p.rvalue.annotation.type
         <class 'int'>
         """
@@ -292,7 +289,6 @@ class Programmer(Iterable):
         for function in self:
             self.module.replace_node(self.name, function)
             exec(self.module.compile(), self.globals)
-            # exec(compile_stmt(function.function), self.globals)
             validator = DoctestValidator.from_ast(self.stub, self.globals)
             if validator.validate_module():
                 yield function

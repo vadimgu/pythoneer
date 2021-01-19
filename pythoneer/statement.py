@@ -14,8 +14,6 @@ class Statement:
         A decorated `ast` statement with attribute `context`. It can be used as
         a regular `ast` statement.
 
-        >>> import ast
-        >>> from pythoneer.context import Context
         >>> ctx = Context([], {})
         >>> Statement(ast.For(), ctx).stmt.context == ctx
         True

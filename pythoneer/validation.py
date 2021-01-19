@@ -3,6 +3,7 @@ import sys
 from io import StringIO
 
 from doctest import DocTestParser, DocTest, DocTestRunner
+from typing import TextIO
 
 
 class DoctestValidator:
@@ -20,15 +21,18 @@ class DoctestValidator:
     @classmethod
     def from_ast(cls, funcdef: ast.FunctionDef, globals):
         """
-        >>> import ast
         >>> f = ast.parse('''
         ... def a():
         ...     'Hello'
         ... ''')
         >>> DoctestValidator.from_ast(f.body[0], {})  # doctest: +ELLIPSIS
-        <validation.DoctestValidator ...>
+        <...DoctestValidator ...>
         """
-        docstring = funcdef.body[0].value.s
+        docstring = ""
+        first_stmt = funcdef.body[0]
+        if isinstance(first_stmt, ast.Expr):
+            if isinstance(first_stmt.value, ast.Str):
+                docstring = first_stmt.value.s
         name = funcdef.name
         return cls(docstring, globals, name)
 

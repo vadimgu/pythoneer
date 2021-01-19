@@ -31,7 +31,7 @@ class AnnotatedExpression:
         >>> from typing import List
         >>> expr = AnnotatedExpression.parse('a + b', 'List[int]', globals())
         >>> expr.annotation.type
-        <class 'typing.List'>
+        typing.List[int]
         """
         return cls(
             ast.parse(expr).body[0].value,

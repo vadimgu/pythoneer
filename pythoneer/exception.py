@@ -1,0 +1,2 @@
+class PythoneerException(Exception):
+    pass

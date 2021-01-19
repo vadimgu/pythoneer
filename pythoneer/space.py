@@ -7,8 +7,18 @@ This module contains various specialist programmers
 
 """
 import ast
-from itertools import combinations
-from typing import Iterator, Sequence, Callable
+from collections import deque, defaultdict
+from itertools import combinations, product
+from typing import (
+    Iterator,
+    Sequence,
+    Callable,
+    Mapping,
+    MutableMapping,
+    List,
+    Set,
+    Type,
+)
 
 from pythoneer.context import Context
 from pythoneer.expression import AnnotatedExpression
@@ -38,7 +48,6 @@ class BooleanExpressionProgrammer:
         Generate all boolean expressions from all boolean expressions and
         variables in `context`.
 
-        >>> from pythoneer.context import Context
         >>> ctx = Context.parse([], {'a': 'bool', 'b': 'bool'}, {})
         >>> p = BooleanExpressionProgrammer()
         >>> boolean_expressions = list(p.expressions(ctx))
@@ -72,7 +81,6 @@ class BooleanExpressionProgrammer:
         """
         Generate all minterm (and) operation expressions
 
-        >>> from pythoneer.expression import AnnotatedExpression
         >>> parse = AnnotatedExpression.parse
         >>> exprs = [parse('a', 'bool', {}), parse('b', 'bool', {})]
         >>> p = BooleanExpressionProgrammer()
@@ -97,16 +105,24 @@ class MathematicalSpace:
     """
     Mathematical expressions space includes all operations with binary and unitary operators.
     a + b
-    a - b
     a * b
-    -a
+    -a, -b
     """
 
     def __init__(self, **options):
         ...
 
     def expressions(self, context: Context) -> Iterator[AnnotatedExpression]:
-        ...
+        integers = context.expressions_by_type(int)
+
+        math_expressions = []
+        # negations
+        for expr in integers:
+            ...
+
+        # binary operations
+        for a, b in combinations(integers, 2):
+            a * b
 
 
 class FunctionalCompositionSpace:
@@ -119,8 +135,60 @@ class FunctionalCompositionSpace:
     def __init__(self, **options):
         ...
 
-    def expressions(self, context: Context) -> Iterator[ast.expr]:
-        ...
+    def expressions(self, context: Context) -> Iterator[AnnotatedExpression]:
+        """
+        Build function calls
+
+        >>> from typing import Callable
+        >>> from operator import sub
+        >>> ctx = Context.parse([], {'sub': 'Callable[[int,int], int]', 'a': 'int', 'b': 'int'}, globals())
+        >>> space = FunctionalCompositionSpace()
+        >>> for expr in space.expressions(ctx):
+        ...     print(expr)
+        <AnnotatedExpression('sub(a, a)', 'int')>
+        <AnnotatedExpression('sub(a, b)', 'int')>
+        <AnnotatedExpression('sub(b, a)', 'int')>
+        <AnnotatedExpression('sub(b, b)', 'int')>
+        """
+        exprs_by_type = defaultdict(
+            list
+        )  # type: MutableMapping[Type, List[AnnotatedExpression]]
+        exprs_by_type.update(context.groupby_type())
+
+        call_expressions = set()  # type: Set[AnnotatedExpression]
+
+        d = deque()  # type: deque[AnnotatedExpression]
+        for callable in context.callables():
+            type_matchd_args = [
+                exprs_by_type[arg.type] for arg in callable.annotation.arg_annotations
+            ]
+            for exprs_for_args in product(*type_matchd_args):
+                call_expression = AnnotatedExpression(
+                    ast.Call(
+                        func=callable.expr,
+                        args=[expr.expr for expr in exprs_for_args],
+                        keywords=[],
+                    ),
+                    callable.annotation.returns_annotation,
+                )
+                d.append(call_expression)
+                call_expressions.add(call_expression)
+                exprs_by_type[call_expression.annotation.type].append(call_expression)
+
+        while d:
+            call = d.popleft()
+            yield call
+        #    for arg in call.args:
+        #        call_expression = AnnotatedExpression(
+        #            ast.Call(
+        #                func=call.expr.func,
+        #                arts=[...],
+        #                keywords=[],
+        #            ),
+        #            call.annotation,
+        #        )
+        #        d.append(call_expression)
+        #        call_expression.append(call_expression)
 
 
 class ObjectCompositionSpace:

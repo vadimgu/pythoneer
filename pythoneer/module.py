@@ -25,7 +25,6 @@ class Module:
         """
         Transform the Module instance back into source code.
 
-        >>> import ast
         >>> m = Module(ast.parse("a=1"), '<test>', {})
         >>> bool(ast.parse(m.to_source()))
         True
@@ -38,7 +37,7 @@ class Module:
         Make a Module instance from a source string.
 
         >>> Module.from_string('', '<test>') # doctest: +ELLIPSIS
-        <module.Module ...>
+        <....Module ...>
         """
         globals = {}
         source_ast = ast.parse(source)
@@ -53,7 +52,7 @@ class Module:
 
         >>> from io import StringIO
         >>> Module.from_stream(StringIO(''), '<test>') # doctest: +ELLIPSIS
-        <module.Module ...>
+        <....Module ...>
         """
         return cls.from_string(stream.read(), filename)
 
@@ -101,7 +100,7 @@ class Module:
         If the `name` cannot be found raise `NameNotFound`.
 
         >>> m = Module.from_string('', '<test>')
-        >>> m.find_function('x')  # doctest: +ELLIPSIS
+        >>> m.find_function('x')  # doctest: +IGNORE_EXCEPTION_DETAIL
         Traceback (most recent call last):
         ...
         module.NameNotFound: ... x ... <test>...
@@ -127,9 +126,8 @@ class Module:
         """
         Return a module where the node referenced by `path` is set to `ast_node`.
 
-        >>> import ast
         >>> m = Module.from_string('def x() -> int: pass', '<test>')
-        >>> new_f = ast.parse('def y() -> int: pass').body[0]
+        >>> new_f = Function(ast.parse('def y() -> int: pass').body[0])
         >>> mod = m.replace_node('x', new_f)
         >>> mod.body[0].name
         'y'
@@ -138,10 +136,10 @@ class Module:
 
         >>> m = Module.from_string('''
         ... class A:
-        ...     def x() -> int:
+        ...     def x(self) -> int:
         ...         pass
         ... ''', '<test>')
-        >>> new_f = ast.parse('def y() -> int: pass').body[0]
+        >>> new_f = Function(ast.parse('def y(self) -> int: pass').body[0])
         >>> mod = m.replace_node('A.x', new_f)
         >>> mod.body[0].body[0].name
         'y'
@@ -168,6 +166,5 @@ class Module:
 
     def compile(self) -> CodeType:
         mod = self.module_ast
-        # print(astor.dump_tree(mod))
         ast.fix_missing_locations(mod)
         return compile(mod, self.filename, "exec")

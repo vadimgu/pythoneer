@@ -1,8 +1,8 @@
 import ast
 from functools import lru_cache
-from typing import TypeVar, Type, Tuple, Iterable, Callable
+from typing import TypeVar, Type, Tuple, Iterable, Callable, List
 
-from pythoneer.utils import compile_expr
+from pythoneer.utils import compile_expr, parse_expr
 
 
 T = TypeVar("T", bound="TypeAnnotation")
@@ -38,7 +38,8 @@ class TypeAnnotation:
         >>> TypeAnnotation.parse('int', {}) # doctest: +ELLIPSIS
         <...TypeAnnotation ...>
         """
-        return cls(ast.parse(expr).body[0].value, globals)
+
+        return cls(parse_expr(expr), globals)
 
     @property
     @lru_cache(maxsize=None)
@@ -49,7 +50,6 @@ class TypeAnnotation:
         >>> TypeAnnotation.parse('int', globals()).type
         <class 'int'>
 
-        >>> from typing import List
         >>> ta = TypeAnnotation.parse('List[int]', globals())
         >>> ta.type
         typing.List[int]
@@ -62,7 +62,6 @@ class TypeAnnotation:
     @property
     def iterable(self) -> bool:
         """
-        >>> from typing import List
         >>> ta = TypeAnnotation.parse('List[int]', globals())
         >>> ta.iterable
         True
@@ -88,7 +87,6 @@ class TypeAnnotation:
         """
         `True` if the type annotation is callable.
 
-        >>> from typing import Callable
         >>> TypeAnnotation.parse('Callable', globals()).callable
         True
         >>> TypeAnnotation.parse('Callable[[int, int], int]', globals()).callable
@@ -124,7 +122,7 @@ class TypeAnnotation:
         """
         return self.type == bool
 
-    def __eq__(self, other: T) -> T:
+    def __eq__(self, other: object) -> bool:
         """
         Equality comparision of two annotations.
 
@@ -152,7 +150,10 @@ class TypeAnnotation:
         >>> TypeAnnotation.parse('List[int]', ns) == TypeAnnotation.parse('Sequence[int]', ns)
         False
         """
-        return self.type == other.type
+        if isinstance(other, TypeAnnotation):
+            return self.type == other.type
+        else:
+            raise NotImplementedError()
 
     @property
     def parametrized(self) -> bool:
@@ -168,11 +169,14 @@ class TypeAnnotation:
         >>> TypeAnnotation.parse('int', globals()).parametrized
         False
         """
-        return type(self.expr) == ast.Subscript and type(self.expr.slice) == ast.Index
+        return isinstance(self.expr, ast.Subscript) and isinstance(
+            self.expr.slice, ast.Index
+        )
 
     @property
-    def slice(self: T) -> T:
+    def slice(self) -> "TypeAnnotation":
         """
+        Return the slice
         >>> from typing import List, Callable, Mapping
         >>> param = TypeAnnotation.parse('List[int]', globals()).slice
         >>> param.type == int
@@ -189,10 +193,9 @@ class TypeAnnotation:
         Non parametrized type annotations fail with a
         `NotImplementAnnotationExpression`.
 
-        >>> TypeAnnotation.parse('int', {}).slice  # doctest: +ELLIPSIS
+        >>> TypeAnnotation.parse('int', {}).slice  # doctest: +IGNORE_EXCEPTION_DETAIL
         Traceback (most recent call last):
-            ...
-        annotation.NonParametrizedAnnotationError: ...
+        NonParametrizedAnnotationError
         """
         if self.parametrized:
             return TypeAnnotation(self.expr.slice.value, self.namespace)
@@ -200,5 +203,33 @@ class TypeAnnotation:
             raise NonParametrizedAnnotationError.from_expr(self.expr)
 
     @property
-    def args(self) -> Tuple[Type]:
-        return self.type.__args__
+    def args(self) -> Tuple[Type, ...]:
+        return self.type.__args__[:-1]
+
+    @property
+    def arg_annotations(self) -> List["TypeAnnotation"]:
+        """
+        >>> from typing import Callable
+        >>> ta = TypeAnnotation.parse('Callable[[int, bool], str]', globals())
+        >>> for arg_annotation in ta.arg_annotations:
+        ...     print(arg_annotation)
+        <TypeAnnotation <class 'int'>>
+        <TypeAnnotation <class 'bool'>>
+        """
+        annotations = []
+        for expr in self.expr.slice.value.elts[0].elts:
+            annotations.append(TypeAnnotation(expr, self.namespace))
+        return annotations
+
+    @property
+    def returns_annotation(self) -> "TypeAnnotation":
+        """
+        >>> from typing import Callable
+        >>> ta = TypeAnnotation.parse('Callable[[int, bool], str]', globals())
+        >>> print(ta.returns_annotation)
+        <TypeAnnotation <class 'str'>>
+        """
+        return TypeAnnotation(
+            self.expr.slice.value.elts[1],
+            self.namespace,
+        )

@@ -1,6 +1,8 @@
 from typing import Iterable
 
-from pythoneer.function import Testable
+
+class Testable:
+    pass
 
 
 class Search:

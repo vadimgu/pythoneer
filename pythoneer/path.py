@@ -1,4 +1,3 @@
-# Just an idea
 import ast
 from pythoneer.binop import ASTOperator
 from typing import Union, Tuple, Callable, Any, Sequence, List, NamedTuple

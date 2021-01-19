@@ -1,10 +1,13 @@
 import ast
 from collections import deque
-from typing import Iterator, List
+from typing import Iterator, List, TypeVar
 
 import astor
 
 from pythoneer.path import ASTPath
+
+
+F = TypeVar("F", bound="Function")
 
 
 class Function:
@@ -26,7 +29,6 @@ class Function:
         Traversing the program AST in breadth-first order and yielding all
         Ellipsis statements.
 
-        >>> import ast
         >>> f = ast.parse('''
         ... def x():
         ...    if a:
@@ -55,7 +57,7 @@ class Function:
                 statement.path = node.path.append((statement_attr, i))
                 yield statement
 
-    def replace(self, old_statement: ast.stmt, new_statement: ast.stmt) -> "Function":
+    def replace(self, old_statement: ast.stmt, new_statement: ast.stmt) -> F:
         path: ASTPath = old_statement.path
         new_function = path.replace(self.function, new_statement)
         new_nesting = self.nesting
