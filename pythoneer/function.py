@@ -1,6 +1,6 @@
 import ast
 from collections import deque
-from typing import Iterator, List, TypeVar
+from typing import Iterator, List, TypeVar, Deque
 
 import astor
 
@@ -22,9 +22,9 @@ class Function:
         self.function = function
         self.nesting = nesting
         self.complexity = complexity
-        self.function.path = ASTPath()
+        self.function.path = ASTPath()  # type: ignore
 
-    def ellipsis_nodes(self) -> ast.stmt:
+    def ellipsis_nodes(self) -> Iterator[ast.Expr]:
         """
         Traversing the program AST in breadth-first order and yielding all
         Ellipsis statements.
@@ -39,26 +39,24 @@ class Function:
         >>> len(list(Function(f.body[0]).ellipsis_nodes()))
         2
         """
-        nodes = deque([self.function])
+        nodes = deque([self.function])  # type: Deque[ast.AST]
         while nodes:
             node = nodes.popleft()
             for statement in self.child_nodes_with_path(node):
-                if (
-                    type(statement) == ast.Expr
-                    and type(statement.value) == ast.Ellipsis
-                ):
-                    yield statement
+                if isinstance(statement, ast.Expr):
+                    if isinstance(statement.value, ast.Ellipsis):
+                        yield statement
                 else:
                     nodes.append(statement)
 
     def child_nodes_with_path(self, node: ast.AST) -> Iterator[ast.stmt]:
         for statement_attr in ["body", "orelse", "finalbody"]:
             for i, statement in enumerate(getattr(node, statement_attr, [])):
-                statement.path = node.path.append((statement_attr, i))
+                statement.path = node.path.append((statement_attr, i))  # type: ignore
                 yield statement
 
-    def replace(self, old_statement: ast.stmt, new_statement: ast.stmt) -> F:
-        path: ASTPath = old_statement.path
+    def replace(self, old_statement: ast.stmt, new_statement: ast.stmt) -> "Function":
+        path: ASTPath = old_statement.path  # type: ignore
         new_function = path.replace(self.function, new_statement)
         new_nesting = self.nesting
         new_complexity = self.complexity

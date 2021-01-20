@@ -1,7 +1,7 @@
 import ast
 from collections import deque
 import copy
-from functools import lru_cache
+from functools import cached_property
 from pythoneer.validation import DoctestValidator
 from typing import (
     Iterator,
@@ -10,6 +10,7 @@ from typing import (
     MutableSequence,
     Mapping,
     TextIO,
+    Deque,
 )
 
 from pythoneer.function import Function
@@ -70,8 +71,7 @@ class Options:
         self.max_complexity = max_complexity
         self.max_nesting = max_nesting
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def search_boundary(self) -> SearchBoundary:
         return SearchBoundary(self.max_complexity, self.max_nesting)
 
@@ -116,8 +116,7 @@ class Programmer(Iterable):
         self.locals = locals
         self.options = options
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def stub(self) -> ast.FunctionDef:
         return self.module.find_function(self.name)
 
@@ -168,8 +167,7 @@ class Programmer(Iterable):
         with open(filename, "r") as fd:
             return cls.from_stream(fd, filename, name)
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def rvalue(self) -> ReturnValue:
         """
         The return value that allows for return assignment and return
@@ -199,11 +197,11 @@ class Programmer(Iterable):
         print(
             "Initial context:", len(context.expressions), len(context.namespace.keys())
         )
-        ast_stack = deque()  # type: deque[Function]
+        ast_stack = deque()  # type: Deque[Function]
         # Attach a context to the ast statement.
         rvalue_insertion_idx = None
         for i, stmt in enumerate(self.stub.body):
-            if type(stmt) == ast.Expr and type(stmt.value) == ast.Ellipsis:
+            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Ellipsis):
                 rvalue_insertion_idx = i
                 break
 

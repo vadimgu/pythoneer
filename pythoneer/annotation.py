@@ -1,6 +1,8 @@
 import ast
-from functools import lru_cache
-from typing import TypeVar, Type, Tuple, Iterable, Callable, List
+from functools import cached_property
+from collections import abc
+from typing import TypeVar, Type, Tuple, Iterable, Callable, List, get_origin, get_args
+from collections.abc import Iterable as ABC_Iterable
 
 from pythoneer.utils import compile_expr, parse_expr
 
@@ -41,8 +43,7 @@ class TypeAnnotation:
 
         return cls(parse_expr(expr), globals)
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def type(self) -> Type:
         """
         A Type instance based on the globals.
@@ -62,46 +63,54 @@ class TypeAnnotation:
     @property
     def iterable(self) -> bool:
         """
-        >>> ta = TypeAnnotation.parse('List[int]', globals())
-        >>> ta.iterable
+        >>> TypeAnnotation.parse('List[int]', globals()).iterable
         True
 
-        Only parametrised annotations are considered iterable.
+        Only parametrised generics are considered iterable.
 
-        >>> ta = TypeAnnotation.parse('List', globals())
-        >>> ta.iterable
+        >>> TypeAnnotation.parse('List', globals()).iterable
         False
 
-        >>> ta = TypeAnnotation('int', globals())
-        >>> ta.iterable
+        >>> TypeAnnotation.parse('int', {}).iterable
+        False
+
+        >>> TypeAnnotation.parse('str', {}).iterable
         False
         """
-        if type(self.expr) == ast.Subscript and type(self.expr.slice) == ast.Index:
-            return issubclass(self.type, Iterable)
-        else:
-            return False
-            # TODO: Implement iterables without iterable type "List" or "[]". ?
+        t = self.type
+        original_generic_type = get_origin(t)
+        if original_generic_type is not None:
+            if get_args(t):
+                return issubclass(original_generic_type, abc.Iterable)
+        return False
 
     @property
     def callable(self) -> bool:
         """
-        `True` if the type annotation is callable.
+        `True` if the type annotation is a parametrized Callable.
 
-        >>> TypeAnnotation.parse('Callable', globals()).callable
-        True
         >>> TypeAnnotation.parse('Callable[[int, int], int]', globals()).callable
         True
+        >>> TypeAnnotation.parse('Callable', globals()).callable
+        False
         >>> TypeAnnotation.parse('int', globals()).callable
         False
+        >>> TypeAnnotation.parse('dict', globals()).callable
+        False
 
-        A class implementing a `__call__` method is also considered callable
+        A class implementing a `__call__` method is not considered callable
+        unless it's typed as a prametrized Callable.
 
         >>> class C:
         ...     def __call__(self): pass
         >>> TypeAnnotation.parse('C', globals()).callable
-        True
+        False
         """
-        return issubclass(self.type, Callable)
+        t = self.type
+        if get_origin(t) is abc.Callable:
+            if len(get_args(t)) == 2:
+                return True
+        return False
 
     @property
     def boolean(self) -> bool:

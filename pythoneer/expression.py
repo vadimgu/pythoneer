@@ -62,3 +62,30 @@ class AnnotatedExpression:
         '(a > b)'
         """
         return astor.to_source(self.expr).strip()
+
+
+class PExpr(ast.Expr):
+    """
+    PExpr
+    """
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.x = "hello"
+
+    @classmethod
+    def from_ast(cls, expr: ast.Expr):
+        """
+        >>> expr = ast.parse('...').body[0]
+        >>> pexpr = PExpr.from_ast(expr)
+        >>> isinstance(pexpr, ast.Expr)
+        True
+        >>> mod = ast.Module(body=[pexpr], type_ignores=[])
+        >>> _ = ast.fix_missing_locations(mod)
+        >>> exec(compile(mod, '<>', mode='exec'))
+
+
+        #>>> astor.to_source(mod)  ## extend: astor.code_gen.SourceGenerator:
+        #'source'
+        """
+        return cls(expr.value)

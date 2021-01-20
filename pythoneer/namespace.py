@@ -2,7 +2,7 @@ import ast
 import _ast
 from pythoneer.utils import parse_expr
 import re
-from typing import Mapping, List, Dict
+from typing import Mapping, List, Dict, MutableMapping
 
 from pythoneer.annotation import TypeAnnotation
 from pythoneer.expression import AnnotatedExpression
@@ -68,7 +68,7 @@ class AnnotatedNamespace:
         ...     c = [1, 2]  # type: List[int]
         ...     d: int = c[0]
         ... '''
-        >>> node = ast.parse(source).body[0]
+        >>> node = ast.parse(source, type_comments=True).body[0]
         >>> ns = AnnotatedNamespace.from_ast(node, source.split('\\n'), globals())
         >>> list(ns.keys())
         ['a', 'b', 'c', 'd']
@@ -91,15 +91,18 @@ class AnnotatedNamespace:
 
         for child in ast.iter_child_nodes(ast_node):
             if isinstance(child, ast.Assign):
-                # TODO support unpack assignment such as "a, b = 1, 2"
+                if len(child.targets) > 1:
+                    # unpack assignment such as "a, b = 1, 2" is not supported
+                    continue
+                if child.type_comment is None:
+                    # untyped assignements are ignored
+                    continue
                 first_target = child.targets[0]
                 if isinstance(first_target, ast.Name):
                     name = first_target.id
-                    _, comment = re.split("# type:", source_lines[child.lineno - 1], 1)
-                    type_expr = parse_expr(comment.strip())
                     namespace[name] = AnnotatedExpression(
                         ast.Name(id=name, ctx=ast.Load()),
-                        TypeAnnotation(type_expr, globals),
+                        TypeAnnotation.parse(child.type_comment, globals),
                     )
             elif isinstance(child, ast.AnnAssign):
                 if isinstance(child.target, ast.Name):

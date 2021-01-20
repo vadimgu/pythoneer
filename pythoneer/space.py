@@ -13,7 +13,7 @@ from typing import (
     Iterator,
     Sequence,
     Callable,
-    Mapping,
+    Deque,
     MutableMapping,
     List,
     Set,
@@ -77,9 +77,9 @@ class BooleanExpressionProgrammer:
                     TypeAnnotation.parse("bool", {}),
                 )
 
-    def minterms(self, boolean_exprs: Sequence[AnnotatedExpression]):
+    def minterms(self, boolean_exprs: Sequence[AnnotatedExpression]) -> Iterator[AnnotatedExpression]:
         """
-        Generate all minterm (and) operation expressions
+        Generate all minterm (AND operation) expressions
 
         >>> parse = AnnotatedExpression.parse
         >>> exprs = [parse('a', 'bool', {}), parse('b', 'bool', {})]
@@ -89,7 +89,7 @@ class BooleanExpressionProgrammer:
         """
         n = 2 ** len(boolean_exprs)
         for i in range(n):
-            values = []
+            values = []  # type: List[ast.expr]
             for j, boolean_expr in enumerate(boolean_exprs):
                 if (i >> j) % 2 == 1:
                     values.append(ast.UnaryOp(op=ast.Not(), operand=boolean_expr.expr))
@@ -113,16 +113,15 @@ class MathematicalSpace:
         ...
 
     def expressions(self, context: Context) -> Iterator[AnnotatedExpression]:
-        integers = context.expressions_by_type(int)
+        # integers = context.expressions_by_type(int)
+        # # negations
+        # for expr in integers:
+        #     ...
 
-        math_expressions = []
-        # negations
-        for expr in integers:
-            ...
-
-        # binary operations
-        for a, b in combinations(integers, 2):
-            a * b
+        # # binary operations
+        # for a, b in combinations(integers, 2):
+        #     a * b
+        ...
 
 
 class FunctionalCompositionSpace:
@@ -157,7 +156,7 @@ class FunctionalCompositionSpace:
 
         call_expressions = set()  # type: Set[AnnotatedExpression]
 
-        d = deque()  # type: deque[AnnotatedExpression]
+        d = deque()  # type: Deque[AnnotatedExpression]
         for callable in context.callables():
             type_matchd_args = [
                 exprs_by_type[arg.type] for arg in callable.annotation.arg_annotations

@@ -5,7 +5,7 @@ import ast
 from typing import (
     Iterator,
     List,
-    Mapping,
+    Mapping, MutableMapping,
     Sequence,
     Tuple,
     Type,
@@ -33,7 +33,7 @@ class Context:
     def __init__(
         self,
         expressions: Sequence[AnnotatedExpression],
-        namespace: AnnotatedNamespace,
+        namespace: MutableMapping[str, AnnotatedExpression],
     ):
         self.expressions = expressions
         self.namespace = namespace
@@ -128,12 +128,16 @@ class Context:
         """
         Generates all callable expressions. Both expression and the namespace are searched.
 
-        >>> from typing import Callable
-        >>> ctx = Context.parse([('a.items', 'Callable')], {'len': 'Callable', 'a': 'dict'}, globals())
+        >>> from typing import Callable, Tuple
+        >>> ctx = Context.parse(
+        ...    [('a.items', 'Callable[[], Tuple[str, int]]')],
+        ...    {'len': 'Callable[[List], int]', 'a': 'dict'},
+        ...    globals(),
+        ... )
         >>> for expr in ctx.callables():
         ...    print(expr)
-        <AnnotatedExpression('len', 'Callable')>
-        <AnnotatedExpression('a.items', 'Callable')>
+        <AnnotatedExpression('len', 'Callable[[List], int]')>
+        <AnnotatedExpression('a.items', 'Callable[[], Tuple[str, int]]')>
         """
         for expr in self.namespace.values():
             if expr.annotation.callable:
@@ -144,7 +148,7 @@ class Context:
                 yield expr
 
     def groupby_type(
-        self, exclude: Tuple[Type, ...] = ()
+        self, exclude: Sequence[Type] = ()
     ) -> Iterator[Tuple[Type, List[AnnotatedExpression]]]:
         """
         Groups expressions by type and generates tuples of type and annotated expressions.
@@ -177,16 +181,18 @@ class Context:
             <AnnotatedExpression('b', 'int')>
             <AnnotatedExpression('(a + b)', 'int')>
         """
-        groups = defaultdict(list)  # type: Mapping[Type, AnnotatedExpression]
+        groups = defaultdict(list)  # type: MutableMapping[Type, List[AnnotatedExpression]]
         for expr in self.namespace.values():
             t = expr.annotation.type
-            if not issubclass(t, exclude):
+            if not issubclass(t, tuple(exclude)):
                 groups[t].append(expr)
         for expr in self.expressions:
             t = expr.annotation.type
-            if not issubclass(t, exclude):
+            if not issubclass(t, tuple(exclude)):
                 groups[t].append(expr)
-        return groups.items()
+
+        for t, expr in groups.items():
+            yield t, expr
 
     def all_expressions(self):
         for expr in self.namespace.values():
@@ -213,10 +219,10 @@ class Context:
             if expr.annotation.type == t:
                 yield expr
 
-    def copy_extend(self, expressions: Sequence[AnnotatedExpression]) -> C:
+    def copy_extend(self, expressions: Sequence[AnnotatedExpression]) -> "Context":
         return Context(self.expressions + expressions, self.namespace)
 
-    def __add__(self, expressions: Sequence[AnnotatedExpression]) -> C:
+    def __add__(self, expressions: Sequence[AnnotatedExpression]) -> "Context":
         return Context(self.expressions + expressions, self.namespace)
 
     def ellipsis(self) -> ast.Expr:

@@ -43,7 +43,7 @@ def compile_stmt(stmt: ast.stmt) -> CodeType:
     >>> ns['a']
     2
     """
-    mod = ast.Module(body=[stmt])
+    mod = ast.Module(body=[stmt],type_ignores=[])
     ast.fix_missing_locations(mod)
     return compile(mod, "<generated>", mode="exec")
 
