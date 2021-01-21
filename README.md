@@ -1,8 +1,9 @@
-# Pythoneer
+# Pythoneer (WORK IN PROGRESS)
 
 Pythoneer is a tool that can write Python functions.
 
-You write a function definition and Pythoneer does the rest for you. For example
+You write a function definition with tests and Pythoneer does the rest for
+you. For example
 
 ```python
 def max(a: int, b:int) -> int
