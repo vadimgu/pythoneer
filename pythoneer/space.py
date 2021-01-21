@@ -77,7 +77,9 @@ class BooleanExpressionProgrammer:
                     TypeAnnotation.parse("bool", {}),
                 )
 
-    def minterms(self, boolean_exprs: Sequence[AnnotatedExpression]) -> Iterator[AnnotatedExpression]:
+    def minterms(
+        self, boolean_exprs: Sequence[AnnotatedExpression]
+    ) -> Iterator[AnnotatedExpression]:
         """
         Generate all minterm (AND operation) expressions
 
@@ -144,10 +146,10 @@ class FunctionalCompositionSpace:
         >>> space = FunctionalCompositionSpace()
         >>> for expr in space.expressions(ctx):
         ...     print(expr)
-        <AnnotatedExpression('sub(a, a)', 'int')>
-        <AnnotatedExpression('sub(a, b)', 'int')>
-        <AnnotatedExpression('sub(b, a)', 'int')>
-        <AnnotatedExpression('sub(b, b)', 'int')>
+        <AnnotatedExpression('sub(a, a)', <class 'int'>)>
+        <AnnotatedExpression('sub(a, b)', <class 'int'>)>
+        <AnnotatedExpression('sub(b, a)', <class 'int'>)>
+        <AnnotatedExpression('sub(b, b)', <class 'int'>)>
         """
         exprs_by_type = defaultdict(
             list
@@ -159,7 +161,7 @@ class FunctionalCompositionSpace:
         d = deque()  # type: Deque[AnnotatedExpression]
         for callable in context.callables():
             type_matchd_args = [
-                exprs_by_type[arg.type] for arg in callable.annotation.arg_annotations
+                exprs_by_type[arg.type] for arg in callable.annotation.callable_args
             ]
             for exprs_for_args in product(*type_matchd_args):
                 call_expression = AnnotatedExpression(
@@ -168,7 +170,7 @@ class FunctionalCompositionSpace:
                         args=[expr.expr for expr in exprs_for_args],
                         keywords=[],
                     ),
-                    callable.annotation.returns_annotation,
+                    callable.annotation.callable_returns,
                 )
                 d.append(call_expression)
                 call_expressions.add(call_expression)
@@ -231,9 +233,7 @@ class StructuredProgrammingSpace:
                         ast.Compare(
                             left=left.expr, ops=[operator()], comparators=[right.expr]
                         ),
-                        TypeAnnotation(
-                            ast.Name(id="bool", ctx=ast.Load()), self.globals
-                        ),
+                        TypeAnnotation(bool, None),
                     )
 
     def statements(self, context: Context) -> Iterator[ast.stmt]:

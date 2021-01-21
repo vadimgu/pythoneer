@@ -2,7 +2,7 @@ import ast
 import _ast
 from pythoneer.utils import parse_expr
 import re
-from typing import Mapping, List, Dict, MutableMapping
+from typing import Mapping, List, Dict, MutableMapping, Type
 
 from pythoneer.annotation import TypeAnnotation
 from pythoneer.expression import AnnotatedExpression
@@ -60,7 +60,7 @@ class AnnotatedNamespace:
         return self.namespace.items()
 
     @classmethod
-    def from_ast(cls, ast_node: ast.AST, source_lines: List[str], globals):
+    def from_ast(cls, ast_node: ast.AST, name: str, globals: dict):
         """
         >>> from typing import List
         >>> source = '''
@@ -79,8 +79,17 @@ class AnnotatedNamespace:
         if isinstance(ast_node, ast.FunctionDef):
             if len(ast_node.args.args) > 0:
                 if ast_node.args.args[0].arg == "self":
+                    class_name = name.split('.')[0]
+                    namespace['self'] = AnnotatedExpression(
+                        ast.Name(id="self", ctx=ast.Load()),
+                        TypeAnnotation.parse(class_name, globals),
+                    )
                     start = 1
                 elif ast_node.args.args[0].arg == "cls":
+                    namespace['cls'] = AnnotatedExpression(
+                        ast.Name(id="cls", ctx=ast.Load()),
+                        TypeAnnotation.parse('type', globals),
+                    )
                     start = 1
                 else:
                     start = 0

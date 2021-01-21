@@ -1,5 +1,5 @@
 import ast
-from typing import Iterator, TextIO
+from typing import Iterator, TextIO, Dict, Any
 from types import CodeType
 
 import astor
@@ -39,8 +39,8 @@ class Module:
         >>> Module.from_string('', '<test>') # doctest: +ELLIPSIS
         <....Module ...>
         """
-        globals = {}
-        source_ast = ast.parse(source)
+        globals = {}  # type: Dict[str, Any]
+        source_ast = ast.parse(source, type_comments=True)
         code = compile(source_ast, filename, mode="exec")
         exec(code, globals)
         return cls(source_ast, filename, globals)
@@ -71,9 +71,9 @@ class Module:
         2
         """
         for stmt in self.module_ast.body:
-            if type(stmt) == ast.FunctionDef:
+            if isinstance(stmt, ast.FunctionDef):
                 yield stmt
-
+    
     def find_function(self, name: str) -> ast.FunctionDef:
         """
         >>> m = Module.from_string('''
@@ -113,10 +113,10 @@ class Module:
         elif len(parts) == 2:
             class_name, method_name = parts
             for module_stmt in self.module_ast.body:
-                if type(module_stmt) == ast.ClassDef and module_stmt.name == class_name:
+                if isinstance(module_stmt,ast.ClassDef) and module_stmt.name == class_name:
                     for class_def_stmt in module_stmt.body:
                         if (
-                            type(class_def_stmt) == ast.FunctionDef
+                            isinstance(class_def_stmt, ast.FunctionDef)
                             and class_def_stmt.name == method_name
                         ):
                             return class_def_stmt

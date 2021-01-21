@@ -33,14 +33,10 @@ class ReturnValue:
             if type(expr.expr) == ast.Name and expr.expr.id == self.id:
                 continue
             if expr.annotation == self.annotation:
-                simple = 0
-                if type(expr.expr) == ast.Name:
-                    simple = 1
-                yield ast.AnnAssign(
-                    target=ast.Name(id=self.id, ctx=ast.Store()),
+                yield ast.Assign(
+                    targets=[ast.Name(id=self.id, ctx=ast.Store())],
                     value=expr.expr,
-                    annotation=self.annotation.expr,
-                    simple=simple,
+                    type_comment=None,
                 )
 
     def name_expr(self) -> ast.Name:

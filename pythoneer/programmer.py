@@ -8,7 +8,7 @@ from typing import (
     Iterable,
     List,
     MutableSequence,
-    Mapping,
+    MutableMapping,
     TextIO,
     Deque,
 )
@@ -107,7 +107,7 @@ class Programmer(Iterable):
         module: Module,
         name: str,
         globals: dict,
-        locals: Mapping[str, List[AnnotatedExpression]],
+        locals: MutableMapping[str, List[AnnotatedExpression]],
         options: Options,
     ):
         self.module = module
@@ -139,10 +139,7 @@ class Programmer(Iterable):
         module = Module.from_string(source, filename)
         function_stmt = module.find_function(name)
         options = Options.from_funcdef(function_stmt, module.globals)
-        source_lines = source.split("\n")
-        locals = AnnotatedNamespace.from_ast(
-            function_stmt, source_lines, module.globals
-        )
+        locals = AnnotatedNamespace.from_ast(function_stmt, name, module.globals)
         return cls(module, name, module.globals, locals, options)
 
     @classmethod
@@ -177,7 +174,8 @@ class Programmer(Iterable):
         >>> p.rvalue.annotation.type
         <class 'int'>
         """
-        rvalue_annotation = TypeAnnotation(self.stub.returns, self.globals)
+        assert self.stub.returns is not None
+        rvalue_annotation = TypeAnnotation.from_ast(self.stub.returns, self.globals)
         if issubclass(rvalue_annotation.type, MutableSequence):
             return ListReturnValue(rvalue_annotation)
         else:
@@ -192,7 +190,25 @@ class Programmer(Iterable):
         program = Function(self.stub)
         print("Locals", self.locals)
 
-        context = Context([], self.locals)
+        # Class annotated properties
+        class_properties = []  # List[AnnotatedExpression]
+        if "self" in self.locals:
+            class_name = self.name.split(".")[0]
+            print(class_name)
+            class_annotations = self.globals[class_name].__annotations__
+            for attr_name, attr_type in class_annotations.items():
+                class_properties.append(
+                    AnnotatedExpression(
+                        ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr=attr_name,
+                            ctx=ast.Load(),
+                        ),
+                        TypeAnnotation(attr_type, None),
+                    )
+                )
+
+        context = Context(class_properties, self.locals)
         context = self.enrich_context(context)
         print(
             "Initial context:", len(context.expressions), len(context.namespace.keys())
@@ -204,13 +220,15 @@ class Programmer(Iterable):
             if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Ellipsis):
                 rvalue_insertion_idx = i
                 break
+        if rvalue_insertion_idx is None:
+            return
 
         for rvalue_assignement in self.rvalue_assignement_statements(context):
             program = Function(copy.deepcopy(self.stub))
             program.function.body.insert(rvalue_insertion_idx, rvalue_assignement)
 
             for stmt in program.body:
-                stmt.context = context
+                setattr(stmt, "context", context)
 
             ast_stack.append(program)
 
@@ -241,6 +259,7 @@ class Programmer(Iterable):
     def enrich_context(self, context: Context) -> Context:
         space = StructuredProgrammingSpace(self.globals, compare_operators=(ast.Gt,))
         new_exprs = list(space.expressions(context))
+        print("enrich", list(map(str, new_exprs)))
         return context.copy_extend(new_exprs)
 
     def statements(self, context: Context) -> Iterator[ast.stmt]:
@@ -269,9 +288,12 @@ class Programmer(Iterable):
     def for_statements(self, context: Context) -> Iterator[ast.stmt]:
         # Generate for statements for all iterable expressions
         for iterable in context.iterables():
+            arg = iterable.annotation.arg
+            if arg is None:
+                continue
             iteration_var = AnnotatedExpression(
                 expr=ast.Name(id="item", ctx=ast.Load()),
-                annotation=iterable.annotation.slice,
+                annotation=arg,
             )
             iter_context = context + [iteration_var]
             iter_context = self.enrich_context(iter_context)

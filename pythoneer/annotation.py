@@ -1,7 +1,7 @@
 import ast
-from functools import cached_property
 from collections import abc
-from typing import TypeVar, Type, Tuple, Iterable, Callable, List, get_origin, get_args
+import typing
+from typing import Optional, TypeVar, Type, Tuple, Iterable, Callable, List
 from collections.abc import Iterable as ABC_Iterable
 
 from pythoneer.utils import compile_expr, parse_expr
@@ -27,38 +27,33 @@ class NonParametrizedAnnotationError(AnnotationError):
 
 
 class TypeAnnotation:
-    def __init__(self, expr: ast.expr, namespace: dict = {}):
-        self.expr = expr
-        self.namespace = namespace
+    type: Type
+    ann_expr: Optional[ast.expr]
+
+    def __init__(self, type: Type, ann_expr: Optional[ast.expr]):
+        self.type = type
+        self.ann_expr = ann_expr
 
     def __hash__(self):
-        return id(self)
+        return hash(self.type)
 
     @classmethod
-    def parse(cls, expr: str, globals: dict):
+    def from_ast(cls, annotation_ast: ast.expr, globals):
+        return cls(eval(compile_expr(annotation_ast), globals), annotation_ast)
+
+    @classmethod
+    def parse(cls, string: str, globals: dict):
         """
-        >>> TypeAnnotation.parse('int', {}) # doctest: +ELLIPSIS
-        <...TypeAnnotation ...>
-        """
+        Parse a type annotation from Python source string.
 
-        return cls(parse_expr(expr), globals)
-
-    @cached_property
-    def type(self) -> Type:
-        """
-        A Type instance based on the globals.
-
-        >>> TypeAnnotation.parse('int', globals()).type
-        <class 'int'>
-
-        >>> ta = TypeAnnotation.parse('List[int]', globals())
+        >>> ta = TypeAnnotation.parse('int', {})
         >>> ta.type
-        typing.List[int]
+        <class 'int'>
         """
-        return eval(compile_expr(self.expr), self.namespace)
+        return cls.from_ast(parse_expr(string), globals)
 
     def __str__(self):
-        return f"<TypeAnnotation {str(self.type)}>"
+        return f"<TypeAnnotation {self.type}>"
 
     @property
     def iterable(self) -> bool:
@@ -78,9 +73,9 @@ class TypeAnnotation:
         False
         """
         t = self.type
-        original_generic_type = get_origin(t)
+        original_generic_type = typing.get_origin(t)
         if original_generic_type is not None:
-            if get_args(t):
+            if typing.get_args(t):
                 return issubclass(original_generic_type, abc.Iterable)
         return False
 
@@ -106,9 +101,8 @@ class TypeAnnotation:
         >>> TypeAnnotation.parse('C', globals()).callable
         False
         """
-        t = self.type
-        if get_origin(t) is abc.Callable:
-            if len(get_args(t)) == 2:
+        if typing.get_origin(self.type) is abc.Callable:
+            if len(typing.get_args(self.type)) == 2:
                 return True
         return False
 
@@ -178,67 +172,48 @@ class TypeAnnotation:
         >>> TypeAnnotation.parse('int', globals()).parametrized
         False
         """
-        return isinstance(self.expr, ast.Subscript) and isinstance(
-            self.expr.slice, ast.Index
-        )
+        return bool(typing.get_args(self.type))
 
     @property
-    def slice(self) -> "TypeAnnotation":
+    def arg(self) -> Optional["TypeAnnotation"]:
         """
-        Return the slice
+        Return the TypeAnnotation Generic type argument
         >>> from typing import List, Callable, Mapping
-        >>> param = TypeAnnotation.parse('List[int]', globals()).slice
-        >>> param.type == int
+        >>> TypeAnnotation(List[int], None).arg.type
+        <class 'int'>
+        >>> TypeAnnotation(List, None).arg is None
         True
-
-        >>> param = TypeAnnotation.parse('Callable[[int, int], int]', globals()).slice
-        >>> param.type
-        ([<class 'int'>, <class 'int'>], <class 'int'>)
-
-        >>> param = TypeAnnotation.parse('Mapping[str, List]', globals()).slice
-        >>> param.type
-        (<class 'str'>, typing.List)
-
-        Non parametrized type annotations fail with a
-        `NotImplementAnnotationExpression`.
-
-        >>> TypeAnnotation.parse('int', {}).slice  # doctest: +IGNORE_EXCEPTION_DETAIL
-        Traceback (most recent call last):
-        NonParametrizedAnnotationError
         """
-        if self.parametrized:
-            return TypeAnnotation(self.expr.slice.value, self.namespace)
+        args = typing.get_args(self.type)
+        if args:
+            return TypeAnnotation(args[0], None)
         else:
-            raise NonParametrizedAnnotationError.from_expr(self.expr)
+            return None
 
     @property
-    def args(self) -> Tuple[Type, ...]:
-        return self.type.__args__[:-1]
-
-    @property
-    def arg_annotations(self) -> List["TypeAnnotation"]:
+    def callable_args(self) -> List["TypeAnnotation"]:
         """
         >>> from typing import Callable
-        >>> ta = TypeAnnotation.parse('Callable[[int, bool], str]', globals())
-        >>> for arg_annotation in ta.arg_annotations:
+        >>> ta = TypeAnnotation(Callable[[int, bool], str], None)
+        >>> for arg_annotation in ta.callable_args:
         ...     print(arg_annotation)
         <TypeAnnotation <class 'int'>>
         <TypeAnnotation <class 'bool'>>
         """
         annotations = []
-        for expr in self.expr.slice.value.elts[0].elts:
-            annotations.append(TypeAnnotation(expr, self.namespace))
+        for type in typing.get_args(self.type)[0]:
+            annotations.append(TypeAnnotation(type, self.ann_expr))
         return annotations
 
     @property
-    def returns_annotation(self) -> "TypeAnnotation":
+    def callable_returns(self) -> "TypeAnnotation":
         """
         >>> from typing import Callable
         >>> ta = TypeAnnotation.parse('Callable[[int, bool], str]', globals())
-        >>> print(ta.returns_annotation)
+        >>> print(ta.callable_returns)
         <TypeAnnotation <class 'str'>>
         """
         return TypeAnnotation(
-            self.expr.slice.value.elts[1],
-            self.namespace,
+            typing.get_args(self.type)[1],
+            self.ann_expr,
         )

@@ -5,7 +5,8 @@ import ast
 from typing import (
     Iterator,
     List,
-    Mapping, MutableMapping,
+    Mapping,
+    MutableMapping,
     Sequence,
     Tuple,
     Type,
@@ -82,7 +83,7 @@ class Context:
 
         # Extract first level assignment expressions
         for stmt in func.body:
-            if type(stmt) == ast.AnnAssign:
+            if isinstance(stmt, ast.AnnAssign):
                 expressions.append(AnnotatedExpression.from_annassign(stmt, namespace))
 
         return cls(
@@ -95,8 +96,8 @@ class Context:
         >>> ctx = Context.parse([('b > 0', 'bool')], {'a': 'bool', 'b': 'int'}, {})
         >>> for expr in ctx.boolean_expressions():
         ...     print(expr)
-        <AnnotatedExpression('a', 'bool')>
-        <AnnotatedExpression('(b > 0)', 'bool')>
+        <AnnotatedExpression('a', <class 'bool'>)>
+        <AnnotatedExpression('(b > 0)', <class 'bool'>)>
         """
         for expr in self.namespace.values():
             if expr.annotation.boolean:
@@ -112,9 +113,9 @@ class Context:
         >>> from typing import List
         >>> ctx = Context.parse([('a[b:]', 'List[int]')], {'a': 'List[int]', 'b': 'int'}, globals())
         >>> for expr in ctx.iterables():
-        ...     print(expr)
-        <AnnotatedExpression('a', 'List[int]')>
-        <AnnotatedExpression('a[b:]', 'List[int]')>
+        ...     print(expr)  # doctest: +ELLIPSIS
+        <AnnotatedExpression('a', ...List[int]...
+        <AnnotatedExpression('a[b:]', ...List[int]...
         """
         for expr in self.namespace.values():
             if expr.annotation.iterable:
@@ -135,9 +136,9 @@ class Context:
         ...    globals(),
         ... )
         >>> for expr in ctx.callables():
-        ...    print(expr)
-        <AnnotatedExpression('len', 'Callable[[List], int]')>
-        <AnnotatedExpression('a.items', 'Callable[[], Tuple[str, int]]')>
+        ...    print(expr)  # doctest: +ELLIPSIS
+        <AnnotatedExpression('len', typing.Callable[[typing.List], int])>
+        <AnnotatedExpression('a.items', typing.Callable[[], typing.Tuple[str, int]])>
         """
         for expr in self.namespace.values():
             if expr.annotation.callable:
@@ -148,7 +149,7 @@ class Context:
                 yield expr
 
     def groupby_type(
-        self, exclude: Sequence[Type] = ()
+        self, exclude: Tuple[Type, ...] = ()
     ) -> Iterator[Tuple[Type, List[AnnotatedExpression]]]:
         """
         Groups expressions by type and generates tuples of type and annotated expressions.
@@ -160,14 +161,14 @@ class Context:
         >>> for type, exprs in ctx.groupby_type():
         ...    print(type)
         ...    for expr in exprs:
-        ...        print("   ",expr)
+        ...        print("   ",expr)  # doctest: +ELLIPSIS
         <class 'int'>
-            <AnnotatedExpression('a', 'int')>
-            <AnnotatedExpression('b', 'int')>
-            <AnnotatedExpression('(a + b)', 'int')>
+            <AnnotatedExpression('a', ...int...)>
+            <AnnotatedExpression('b', ...int...)>
+            <AnnotatedExpression('(a + b)', ...int...)>
         <class 'bool'>
-            <AnnotatedExpression('c', 'bool')>
-            <AnnotatedExpression('(a > b)', 'bool')>
+            <AnnotatedExpression('c', ...bool...)>
+            <AnnotatedExpression('(a > b)', ...bool...)>
 
         You can exclude expressions of particular subtyptes by providing a
         tuple of types in the `exclude` parameter.
@@ -175,24 +176,26 @@ class Context:
         >>> for type, exprs in ctx.groupby_type(exclude=(bool,)):
         ...    print(type)
         ...    for expr in exprs:
-        ...        print("   ",expr)
+        ...        print("   ",expr)  # doctest: +ELLIPSIS
         <class 'int'>
-            <AnnotatedExpression('a', 'int')>
-            <AnnotatedExpression('b', 'int')>
-            <AnnotatedExpression('(a + b)', 'int')>
+            <AnnotatedExpression('a', ...int...)>
+            <AnnotatedExpression('b', ...int...)>
+            <AnnotatedExpression('(a + b)', ...int...)>
         """
-        groups = defaultdict(list)  # type: MutableMapping[Type, List[AnnotatedExpression]]
+        groups = defaultdict(
+            list
+        )  # type: MutableMapping[Type, List[AnnotatedExpression]]
         for expr in self.namespace.values():
             t = expr.annotation.type
-            if not issubclass(t, tuple(exclude)):
+            if not issubclass(t, exclude):
                 groups[t].append(expr)
         for expr in self.expressions:
             t = expr.annotation.type
-            if not issubclass(t, tuple(exclude)):
+            if not issubclass(t, exclude):
                 groups[t].append(expr)
 
-        for t, expr in groups.items():
-            yield t, expr
+        for t, exprs in groups.items():
+            yield t, exprs
 
     def all_expressions(self):
         for expr in self.namespace.values():
@@ -210,10 +213,10 @@ class Context:
         ...     {'a': 'int', 'b': 'int', 'c': 'bool'},
         ...     {})
         >>> for expr in ctx.expressions_by_type(int):
-        ...     print(expr)
-        <AnnotatedExpression('a', 'int')>
-        <AnnotatedExpression('b', 'int')>
-        <AnnotatedExpression('(a + b)', 'int')>
+        ...     print(expr)  # doctest: +ELLIPSIS
+        <AnnotatedExpression('a', ...int...)>
+        <AnnotatedExpression('b', ...int...)>
+        <AnnotatedExpression('(a + b)', ...int...)>
         """
         for expr in self.all_expressions():
             if expr.annotation.type == t:

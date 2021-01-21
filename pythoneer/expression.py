@@ -1,8 +1,10 @@
 import ast
+from typing import Type, NamedTuple
 
 import astor
 
 from pythoneer.annotation import TypeAnnotation
+from pythoneer.utils import parse_expr
 
 
 class AnnotatedExpression:
@@ -15,14 +17,16 @@ class AnnotatedExpression:
         self.annotation = annotation
 
     def __str__(self):
-        return f"<AnnotatedExpression({repr(self.to_source())}, {repr(astor.to_source(self.annotation.expr).strip())})>"
+        return (
+            f"<AnnotatedExpression({repr(self.to_source())}, {self.annotation.type})>"
+        )
 
     @classmethod
     def parse(cls, expr: str, annotation: str, globals: dict):
         """
         Parse an expression `expr` with an `annotation` as strings.
 
-        >>> expr = AnnotatedExpression.parse('a = b', 'int', {})
+        >>> expr = AnnotatedExpression.parse('a == b', 'int', {})
         >>> expr.annotation.type
         <class 'int'>
 
@@ -34,25 +38,24 @@ class AnnotatedExpression:
         typing.List[int]
         """
         return cls(
-            ast.parse(expr).body[0].value,
-            TypeAnnotation(
-                ast.parse(annotation).body[0].value,
-                globals,
-            ),
+            parse_expr(expr),
+            TypeAnnotation.parse(annotation, globals),
         )
 
     @classmethod
     def from_arg(cls, arg: ast.arg, namespace: dict = {}):
+        assert arg.annotation is not None
         return cls(
             expr=ast.Name(id=arg.arg, ctx=ast.Load()),
-            annotation=TypeAnnotation(arg.annotation, namespace),
+            annotation=TypeAnnotation.from_ast(arg.annotation, namespace),
         )
 
     @classmethod
     def from_annassign(cls, stmt: ast.AnnAssign, namespace: dict = {}):
+        assert isinstance(stmt.target, ast.Name)
         return cls(
             expr=ast.Name(id=stmt.target.id, ctx=ast.Load()),
-            annotation=TypeAnnotation(stmt.annotation, namespace),
+            annotation=TypeAnnotation.from_ast(stmt.annotation, namespace),
         )
 
     def to_source(self):
@@ -62,30 +65,3 @@ class AnnotatedExpression:
         '(a > b)'
         """
         return astor.to_source(self.expr).strip()
-
-
-class PExpr(ast.Expr):
-    """
-    PExpr
-    """
-
-    def __init__(self, *args, **kw):
-        super().__init__(*args, **kw)
-        self.x = "hello"
-
-    @classmethod
-    def from_ast(cls, expr: ast.Expr):
-        """
-        >>> expr = ast.parse('...').body[0]
-        >>> pexpr = PExpr.from_ast(expr)
-        >>> isinstance(pexpr, ast.Expr)
-        True
-        >>> mod = ast.Module(body=[pexpr], type_ignores=[])
-        >>> _ = ast.fix_missing_locations(mod)
-        >>> exec(compile(mod, '<>', mode='exec'))
-
-
-        #>>> astor.to_source(mod)  ## extend: astor.code_gen.SourceGenerator:
-        #'source'
-        """
-        return cls(expr.value)
