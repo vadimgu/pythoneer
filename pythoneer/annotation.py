@@ -30,7 +30,7 @@ class TypeAnnotation:
     type: Type
     ann_expr: Optional[ast.expr]
 
-    def __init__(self, type: Type, ann_expr: Optional[ast.expr]):
+    def __init__(self, type: Type, ann_expr: Optional[ast.expr]=None):
         self.type = type
         self.ann_expr = ann_expr
 

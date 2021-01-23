@@ -14,6 +14,9 @@ from typing import (
 )
 from collections import defaultdict
 
+from astor.code_gen import to_source
+from pythoneer import expression
+
 from pythoneer.expression import AnnotatedExpression
 from pythoneer.annotation import TypeAnnotation
 from pythoneer.namespace import AnnotatedNamespace
@@ -33,11 +36,17 @@ class Context:
 
     def __init__(
         self,
-        expressions: Sequence[AnnotatedExpression],
+        expressions: List[AnnotatedExpression],
         namespace: MutableMapping[str, AnnotatedExpression],
     ):
         self.expressions = expressions
         self.namespace = namespace
+
+    def __str__(self):
+        out = []
+        for type, exprs in self.groupby_type():
+            out.append(f"    {str(type)}: {str([expr.to_source() for expr in exprs])},")
+        return "expressions: {\n" + "\n".join(out) + "\n}"
 
     @classmethod
     def parse(
@@ -221,6 +230,9 @@ class Context:
         for expr in self.all_expressions():
             if expr.annotation.type == t:
                 yield expr
+
+    def extend(self, expressions: Sequence[AnnotatedExpression]):
+        self.expressions.extend(expressions)
 
     def copy_extend(self, expressions: Sequence[AnnotatedExpression]) -> "Context":
         return Context(self.expressions + expressions, self.namespace)

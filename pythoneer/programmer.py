@@ -7,10 +7,12 @@ from typing import (
     Iterator,
     Iterable,
     List,
+    Mapping,
     MutableSequence,
     MutableMapping,
     TextIO,
     Deque,
+    Type,
 )
 
 from pythoneer.function import Function
@@ -22,7 +24,7 @@ from pythoneer.expression import AnnotatedExpression
 from pythoneer.annotation import TypeAnnotation
 from pythoneer.return_value import ReturnValue, ListReturnValue
 from pythoneer.utils import compile_stmt, compile_expr
-from pythoneer.space import StructuredProgrammingSpace
+from pythoneer.space import NaiveProgrammer, StructuredProgrammingSpace
 
 
 class ProgrammerException(Exception):
@@ -67,9 +69,57 @@ class Options:
     Defines all options for a Programmer.
     """
 
-    def __init__(self, max_complexity: int = 4, max_nesting: int = 1):
+    ast_operator_map: Mapping[str, Type[ast.operator]] = {
+        "+": ast.Add,
+        "-": ast.Sub,
+        "/": ast.Div,
+        "//": ast.FloorDiv,
+        "@": ast.MatMult,
+        "*": ast.Mult,
+        "**": ast.Pow,
+        "%": ast.Mod,
+        "<<": ast.LShift,
+        ">>": ast.RShift,
+        "|": ast.BitOr,
+        "^": ast.BitXor,
+        "&": ast.BitAnd,
+    }
+
+    ast_unaryop_map: Mapping[str, Type[ast.unaryop]] = {
+        "~": ast.Invert,
+        "not": ast.Not,
+        "+": ast.UAdd,
+        "-": ast.USub,
+    }
+
+    ast_cmpop_map: Mapping[str, Type[ast.cmpop]] = {
+        "==": ast.Eq,
+        "!=": ast.NotEq,
+        "<": ast.Lt,
+        "<=": ast.LtE,
+        ">": ast.Gt,
+        ">=": ast.GtE,
+        "is": ast.Is,
+        "is not": ast.IsNot,
+        "in": ast.In,
+        "not in": ast.NotIn,
+    }
+
+    def __init__(
+        self,
+        unary_operators: List[str] = [],
+        binary_operators: List[str] = [],
+        compare_operators: List[str] = ["==", "<"],
+        expression_levels: int = 1,
+        max_complexity: int = 4,
+        max_nesting: int = 1,
+    ):
         self.max_complexity = max_complexity
         self.max_nesting = max_nesting
+        self.unary_operators = unary_operators
+        self.binary_operators = binary_operators
+        self.compare_operators = compare_operators
+        self.expression_levels = expression_levels
 
     @cached_property
     def search_boundary(self) -> SearchBoundary:
@@ -96,6 +146,18 @@ class Options:
                 return cls(**eval(compile_expr(stmt.value), globals))
         return cls()
 
+    @property
+    def unary_operators_ast(self) -> List[Type[ast.unaryop]]:
+        return [self.ast_unaryop_map[op] for op in self.unary_operators]
+
+    @property
+    def binary_operators_ast(self) -> List[Type[ast.operator]]:
+        return [self.ast_operator_map[op] for op in self.binary_operators]
+
+    @property
+    def compare_operators_ast(self) -> List[Type[ast.cmpop]]:
+        return [self.ast_cmpop_map[op] for op in self.compare_operators]
+
 
 class Programmer(Iterable):
     """
@@ -115,6 +177,12 @@ class Programmer(Iterable):
         self.globals = globals
         self.locals = locals
         self.options = options
+        self.expression_space = NaiveProgrammer(
+            options.binary_operators_ast,
+            options.compare_operators_ast,
+            options.unary_operators_ast,
+            options.expression_levels,
+        )
 
     @cached_property
     def stub(self) -> ast.FunctionDef:
@@ -227,8 +295,8 @@ class Programmer(Iterable):
             program = Function(copy.deepcopy(self.stub))
             program.function.body.insert(rvalue_insertion_idx, rvalue_assignement)
 
-            for stmt in program.body:
-                setattr(stmt, "context", context)
+            # for stmt in program.body:
+            #    setattr(stmt, "context", context)
 
             ast_stack.append(program)
 
@@ -238,7 +306,8 @@ class Programmer(Iterable):
             ast_program = ast_stack.popleft()
             yield ast_program
             for ellipsis_stmt in ast_program.ellipsis_nodes():
-                current_context = getattr(ellipsis_stmt, "context")
+                # current_context = getattr(ellipsis_stmt, "context")
+                current_context = context
                 for stmt in self.statements(current_context):
                     new_program = ast_program.replace(ellipsis_stmt, stmt)
 
@@ -257,10 +326,8 @@ class Programmer(Iterable):
                     ast_stack.append(new_program)
 
     def enrich_context(self, context: Context) -> Context:
-        space = StructuredProgrammingSpace(self.globals, compare_operators=(ast.Gt,))
-        new_exprs = list(space.expressions(context))
-        print("enrich", list(map(str, new_exprs)))
-        return context.copy_extend(new_exprs)
+        space = self.expression_space
+        return space.enrich_context(context)
 
     def statements(self, context: Context) -> Iterator[ast.stmt]:
         yield from self.rvalue_assignement_statements(context)

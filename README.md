@@ -21,7 +21,7 @@ Pythoneer will write code replacing the ellipsis statement (`...`).
 ## Basic Usage
 
 ```bash
-$ pythoneer example.py
+$ pythoneer example.py max
 def max(a: int, b:int) -> int
     """
     >>> max(5, 6)
@@ -45,21 +45,42 @@ Run `pip install` command in you development virtual environment.
 
 ## Advanced Usage
 
-### Hints
+## Options
+
+You can provide additional options to Pythoneer by declaring dict literal in the body of a function. Like this
+
+```
+def max(a: int, b:int) -> int
+    """
+    >>> max(5, 6)
+    6
+    >>> max(6, 5)
+    6
+    """
+    {'max_complexity': 2}
+    ...
+```
+
+### Using globals
+
+By default Pythoneer will use only variables local to functions.
 
 ```python
-from operator import add
+import math
 
-def sum(a: int, b:int) -> int
+def factorial_limited(a: int, b:int) -> int
     """
-    >>> sum(0, 0)
-    0
-    >>> sum(0, 1)
+    Return the min(a!, b)
+    >>> f(1, 100)
     1
-    >>> sum(2, 3)
-    5
+    >>> f(2, 100)
+    2
+    >>> f(3, 100)
+    6
+    >>> f(5, 100)
+    100
     """
-    add = add  # type: Callable[[int, int], int]
+    factorial = math.factorial  # type: Callable[[int], int]
     ...
 ```
 
