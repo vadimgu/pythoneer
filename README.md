@@ -37,28 +37,28 @@ def max(a: int, b:int) -> int
 
 ## Installation
 
-Run `pip install` command in you development virtual environment.
+TODO: Package
+TODO: Upload to Pypi
 
-```bash
-[env]$ pip install pythoneer
+For now, clone and run `setup.py`
+
+```
+$ git clone https://github.com/vadimgu/pythoneer.git
+$ cd pythoneer
+$ python setup.py install
 ```
 
-## Advanced Usage
+## Configdict
 
-## Options
-
-You can provide additional options to Pythoneer by declaring "configdict". A
-configdict is an annasigned dict literal fllowing the "doctstring". For example:
+You can provide additional options to Pythoneer by declaring configdict. A
+configdict is a first dict literal following the "doctstring". For example:
 
 ```python
 def max(a: int, b:int) -> int
-    """
-    >>> max(5, 6)
-    6
-    >>> max(6, 5)
-    6
-    """
-    {"compare_operators": ['<=',]}
+    """ Return the largest value."""
+    {
+        "compare_operators": ['<=',],
+    }
     ...
 ```
 
