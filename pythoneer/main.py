@@ -2,6 +2,8 @@ import argparse
 import sys
 from typing import TextIO, Optional, List
 
+import astor
+
 from pythoneer.programmer import Programmer
 
 
@@ -47,10 +49,10 @@ def main(stdout: TextIO, stderr: TextIO, args: Optional[List[str]] = None) -> No
 
         if options.all:
             for f in programmer:
-                print(f.to_source(), end="\n-----------------\n", file=stdout)
+                print(astor.to_source(f), end="\n-----------------\n", file=stdout)
         elif options.working:
             for f in programmer.filter():
-                print(f.to_source(), end="\n-----------------\n", file=stdout)
+                print(astor.to_source(f), end="\n-----------------\n", file=stdout)
         else:
             f = programmer.first()
-            print(f.to_source())
+            print(astor.to_source(f))

@@ -1,5 +1,5 @@
 import ast
-from typing import Iterator, TextIO, Dict, Any
+from typing import Iterator, TextIO, Dict, Any, List
 from types import CodeType
 
 import astor
@@ -73,7 +73,7 @@ class Module:
         for stmt in self.module_ast.body:
             if isinstance(stmt, ast.FunctionDef):
                 yield stmt
-    
+
     def find_function(self, name: str) -> ast.FunctionDef:
         """
         >>> m = Module.from_string('''
@@ -113,7 +113,10 @@ class Module:
         elif len(parts) == 2:
             class_name, method_name = parts
             for module_stmt in self.module_ast.body:
-                if isinstance(module_stmt,ast.ClassDef) and module_stmt.name == class_name:
+                if (
+                    isinstance(module_stmt, ast.ClassDef)
+                    and module_stmt.name == class_name
+                ):
                     for class_def_stmt in module_stmt.body:
                         if (
                             isinstance(class_def_stmt, ast.FunctionDef)
@@ -122,15 +125,16 @@ class Module:
                             return class_def_stmt
         raise NameNotFound(f"The name {name} was not found in {self.filename}.")
 
-    def replace_node(self, name: str, function: Function) -> ast.Module:
+    def replace_stmts(self, name: str, stmts: List[ast.stmt]) -> ast.Module:
         """
-        Return a module where the node referenced by `path` is set to `ast_node`.
+        Modify the module's AST. Set the body of function referenced by
+        `name` to a new seatements list `stmts`.
 
         >>> m = Module.from_string('def x() -> int: pass', '<test>')
-        >>> new_f = Function(ast.parse('def y() -> int: pass').body[0])
-        >>> mod = m.replace_node('x', new_f)
-        >>> mod.body[0].name
-        'y'
+        >>> new_stmts = [ast.Return(value=ast.Name(id='a', ctx=ast.Load()))]
+        >>> mod = m.replace_stmts('x', new_stmts)
+        >>> ast.dump(mod.body[0])  # doctest: +ELLIPSIS
+        "FunctionDef(name='x',... body=[Return(value=Name(id='a', ctx=Load()))]...)"
 
         The same can be done with a class method.
 
@@ -139,17 +143,18 @@ class Module:
         ...     def x(self) -> int:
         ...         pass
         ... ''', '<test>')
-        >>> new_f = Function(ast.parse('def y(self) -> int: pass').body[0])
-        >>> mod = m.replace_node('A.x', new_f)
-        >>> mod.body[0].body[0].name
-        'y'
+        >>> new_stmts = [ast.Return(value=ast.Name(id='a', ctx=ast.Load()))]
+        >>> mod = m.replace_stmts('A.x', new_stmts)
+        >>> ast.dump(mod.body[0])  # doctest: +ELLIPSIS
+        "ClassDef(name='A',... body=[FunctionDef(name='x',... body=[Return(value=Name(id='a', ctx=Load()))]...)]...)"
+
         """
         parts = name.split(".")
 
         if len(parts) == 1:
             for i, stmt in enumerate(self.module_ast.body):
                 if isinstance(stmt, ast.FunctionDef) and stmt.name == name:
-                    self.module_ast.body[i] = function.function
+                    stmt.body = stmts
                     return self.module_ast
         elif len(parts) == 2:
             class_name, method_name = parts
@@ -160,7 +165,7 @@ class Module:
                             isinstance(cls_stmt, ast.FunctionDef)
                             and cls_stmt.name == method_name
                         ):
-                            stmt.body[i] = function.function
+                            cls_stmt.body = stmts
                             return self.module_ast
         raise NameNotFound(f"The name {name} was not found in {self.filename}.")
 

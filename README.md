@@ -47,9 +47,10 @@ Run `pip install` command in you development virtual environment.
 
 ## Options
 
-You can provide additional options to Pythoneer by declaring dict literal in the body of a function. Like this
+You can provide additional options to Pythoneer by declaring "configdict". A
+configdict is an annasigned dict literal fllowing the "doctstring". For example:
 
-```
+```python
 def max(a: int, b:int) -> int
     """
     >>> max(5, 6)
@@ -57,28 +58,27 @@ def max(a: int, b:int) -> int
     >>> max(6, 5)
     6
     """
-    {'max_complexity': 2}
+    {"compare_operators": ['<=',]}
     ...
 ```
 
+TODO: List all options.
+
 ### Using globals
 
-By default Pythoneer will use only variables local to functions.
+By default Pythoneer will use only variables local to functions. To make it
+use a global function, assign it to a local variable and add a type
+annotation.
 
 ```python
 import math
 
-def factorial_limited(a: int, b:int) -> int
+def factorial_limited(n: int, upper_limit: int) -> int:
     """
-    Return the min(a!, b)
-    >>> f(1, 100)
-    1
-    >>> f(2, 100)
-    2
-    >>> f(3, 100)
-    6
-    >>> f(5, 100)
-    100
+    Return the minimum between the factorial of `n` and `upper_limit`.
+
+    >>> factorial_limited(3, 100), factorial_limited(4, 100), factorial_limited(5, 100)
+    (6, 24, 100)
     """
     factorial = math.factorial  # type: Callable[[int], int]
     ...

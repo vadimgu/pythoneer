@@ -1,8 +1,6 @@
 import ast
-from collections import deque
-import copy
 from functools import cached_property
-from pythoneer.validation import DoctestValidator
+from itertools import zip_longest
 from typing import (
     Iterator,
     Iterable,
@@ -11,20 +9,20 @@ from typing import (
     MutableSequence,
     MutableMapping,
     TextIO,
-    Deque,
     Type,
 )
 
+from pythoneer.pattern import PatternPrograms, conditional_pattern, trivial_pattern
+from pythoneer.validation import DoctestValidator
 from pythoneer.function import Function
 from pythoneer.module import Module
 from pythoneer.context import Context
 from pythoneer.namespace import AnnotatedNamespace
-from pythoneer.compare import CompareExpressions
 from pythoneer.expression import AnnotatedExpression
 from pythoneer.annotation import TypeAnnotation
 from pythoneer.return_value import ReturnValue, ListReturnValue
-from pythoneer.utils import compile_stmt, compile_expr
-from pythoneer.space import NaiveProgrammer, StructuredProgrammingSpace
+from pythoneer.utils import compile_expr
+from pythoneer.space import ExpressionSpace
 
 
 class ProgrammerException(Exception):
@@ -161,7 +159,7 @@ class Options:
 
 class Programmer(Iterable):
     """
-    Programmer can explore program space
+    Programmer will produce all programs it can write.
     """
 
     def __init__(
@@ -177,7 +175,7 @@ class Programmer(Iterable):
         self.globals = globals
         self.locals = locals
         self.options = options
-        self.expression_space = NaiveProgrammer(
+        self.expression_space = ExpressionSpace(
             options.binary_operators_ast,
             options.compare_operators_ast,
             options.unary_operators_ast,
@@ -249,139 +247,45 @@ class Programmer(Iterable):
         else:
             return ReturnValue(rvalue_annotation)
 
-    def __iter__(self) -> Iterator[Function]:
-        """
-        Iterate over all programs that this programmer can write.
-        """
-        print("Start...")
-        self.stub.body.append(self.rvalue.return_statement())
-        program = Function(self.stub)
-        print("Locals", self.locals)
-
-        # Class annotated properties
-        class_properties = []  # List[AnnotatedExpression]
-        if "self" in self.locals:
-            class_name = self.name.split(".")[0]
-            print(class_name)
-            class_annotations = self.globals[class_name].__annotations__
-            for attr_name, attr_type in class_annotations.items():
-                class_properties.append(
-                    AnnotatedExpression(
-                        ast.Attribute(
-                            value=ast.Name(id="self", ctx=ast.Load()),
-                            attr=attr_name,
-                            ctx=ast.Load(),
-                        ),
-                        TypeAnnotation(attr_type, None),
-                    )
-                )
-
-        context = Context(class_properties, self.locals)
-        context = self.enrich_context(context)
-        print(
-            "Initial context:", len(context.expressions), len(context.namespace.keys())
-        )
-        ast_stack = deque()  # type: Deque[Function]
-        # Attach a context to the ast statement.
-        rvalue_insertion_idx = None
+    def __iter__(self) -> Iterator[ast.Module]:
+        first_ellipsis_pos = -1
         for i, stmt in enumerate(self.stub.body):
             if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Ellipsis):
-                rvalue_insertion_idx = i
+                first_ellipsis_pos = i
                 break
-        if rvalue_insertion_idx is None:
-            return
 
-        for rvalue_assignement in self.rvalue_assignement_statements(context):
-            program = Function(copy.deepcopy(self.stub))
-            program.function.body.insert(rvalue_insertion_idx, rvalue_assignement)
+        preamble = self.stub.body[:first_ellipsis_pos]
+        conclusion = self.stub.body[first_ellipsis_pos + 1 :]
 
-            # for stmt in program.body:
-            #    setattr(stmt, "context", context)
+        context = Context([], self.locals)
+        context = self.expression_space.enrich_context(context)
 
-            ast_stack.append(program)
+        pat_cond = PatternPrograms(
+            conditional_pattern(self.rvalue.annotation.type, preamble, conclusion),
+            context,
+        )
+        pat_trivial = PatternPrograms(
+            trivial_pattern(self.rvalue.annotation.type, preamble, conclusion),
+            context,
+        )
+        # Iterating in parallel over
+        for progs in zip_longest(pat_cond.generate(), pat_trivial.generate()):
+            for prog in progs:
+                if prog is not None:
+                    yield prog
 
-        seen = set()
-        search_boundary = self.options.search_boundary
-        while ast_stack:
-            ast_program = ast_stack.popleft()
-            yield ast_program
-            for ellipsis_stmt in ast_program.ellipsis_nodes():
-                # current_context = getattr(ellipsis_stmt, "context")
-                current_context = context
-                for stmt in self.statements(current_context):
-                    new_program = ast_program.replace(ellipsis_stmt, stmt)
+        # yield from pat.generate()
 
-                    # Stop cycles and avoid identical functions
-                    new_hash = hash(ast.dump(new_program.function))
-                    if new_hash in seen:
-                        # print("Debug: repetition")
-                        continue
-                    seen.add(new_hash)
-
-                    # Search boundary test
-                    if search_boundary.crossed_by(new_program):
-                        # print("Debug: hit search boundary")
-                        continue
-
-                    ast_stack.append(new_program)
-
-    def enrich_context(self, context: Context) -> Context:
-        space = self.expression_space
-        return space.enrich_context(context)
-
-    def statements(self, context: Context) -> Iterator[ast.stmt]:
-        yield from self.rvalue_assignement_statements(context)
-        yield from self.if_statements(context)
-        yield from self.for_statements(context)
-        # yield from self.break_statements(context)
-
-    def rvalue_assignement_statements(self, context: Context) -> Iterator[ast.stmt]:
-        compatible_exprs = context.expressions_by_type(self.rvalue.annotation.type)
-        for stmt in self.rvalue.assigns(compatible_exprs):
-            yield stmt
-
-    def break_statements(self, context: Context) -> Iterator[ast.stmt]:
-        yield ast.Expr(value=ast.Break())
-
-    def if_statements(self, context: Context) -> Iterator[ast.stmt]:
-        # Generate if statements for all boolean expressions
-        for bool_expr in context.boolean_expressions():
-            yield ast.If(
-                test=bool_expr.expr,
-                body=[context.ellipsis()],
-                orelse=[context.ellipsis()],
-            )
-
-    def for_statements(self, context: Context) -> Iterator[ast.stmt]:
-        # Generate for statements for all iterable expressions
-        for iterable in context.iterables():
-            arg = iterable.annotation.arg
-            if arg is None:
-                continue
-            iteration_var = AnnotatedExpression(
-                expr=ast.Name(id="item", ctx=ast.Load()),
-                annotation=arg,
-            )
-            iter_context = context + [iteration_var]
-            iter_context = self.enrich_context(iter_context)
-
-            yield ast.For(
-                target=ast.Name(id="item", ctx=ast.Store()),
-                iter=iterable.expr,
-                body=[iter_context.ellipsis()],
-                orelse=[],
-            )
-
-    def filter(self) -> Iterator[Function]:
-        for function in self:
-            self.module.replace_node(self.name, function)
+    def filter(self) -> Iterator[ast.Module]:
+        for generated_mod in self.__iter__():
+            self.module.replace_stmts(self.name, generated_mod.body)
             exec(self.module.compile(), self.globals)
             validator = DoctestValidator.from_ast(self.stub, self.globals)
             if validator.validate_module():
-                yield function
+                yield generated_mod
 
-    def first(self) -> Function:
-        for function in self.filter():
-            return function
+    def first(self) -> ast.Module:
+        for generated_mod in self.filter():
+            return generated_mod
         else:
             raise NotImplementedError

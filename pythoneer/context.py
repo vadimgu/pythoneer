@@ -244,4 +244,4 @@ class Context:
         """
         Returns an Ellipsis expression with a context.
         """
-        return ast.Expr(value=ast.Ellipsis(), context=self)
+        return ast.Expr(value=ast.Ellipsis())

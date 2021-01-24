@@ -1,21 +1,10 @@
-"""
-This module contains various specialist programmers
-
-- MathematicalProgrammer
-- FunctionalProgrammer
-- OOProgrammer
-
-"""
 import ast
-from collections import deque, defaultdict
 from itertools import combinations, permutations, product
 from typing import (
     Iterator,
-    Sequence,
     Callable,
-    Deque,
-    MutableMapping,
     List,
+    Mapping,
     Set,
     Type,
 )
@@ -25,17 +14,11 @@ from pythoneer.expression import AnnotatedExpression
 from pythoneer.annotation import TypeAnnotation
 
 
-class ProgramSpace:
-    def expressions(self, context: Context) -> Iterator[AnnotatedExpression]:
-        ...
-
-    def statements(self, context: Context) -> Iterator[ast.stmt]:
-        ...
-
-
-class NaiveProgrammer:
+class ExpressionSpace:
     """
-    Attributes > Functions > Operations > Comparisons > BooleanExpressions
+    The ExpressionSpace build new expressions based on a context. It can be
+    configured by setting the operations it can use when generating new
+    expressions.
     """
 
     binary_operators: List[Type[ast.operator]]
@@ -62,12 +45,77 @@ class NaiveProgrammer:
         self.unary_operators = unary_operators
         self.expression_levels = expression_levels
 
+    def enrich_context(self, ctx: Context) -> Context:
+        """
+        Makes a new context with new expressions.
+
+        By default only using a comparison operator "==".
+
+        >>> ctx = Context.parse([], {'a': 'int', 'b': 'int'}, {})
+        >>> print(ctx)
+        expressions: {
+            <class 'int'>: ['a', 'b'],
+        }
+        >>> p = ExpressionSpace()
+        >>> print(p.enrich_context(ctx))
+        expressions: {
+            <class 'int'>: ['a', 'b'],
+            <class 'bool'>: ['(a == b)'],
+        }
+
+        A more complexe example. Functions are applied after operations.
+
+        >>> from math import factorial
+        >>> ctx = Context.parse([], {'n': 'int', 'k': 'int', 'factorial': 'Callable[[int],int]'}, globals())
+        >>> p = ExpressionSpace(
+        ...    unary_operators=[],
+        ...    compare_operators=[],
+        ...    binary_operators=[ast.Sub, ast.FloorDiv],
+        ...    expression_levels=1,
+        ... )
+        >>> p.compare_operators
+        []
+        >>> new_ctx = p.enrich_context(ctx)
+        >>> print([expr.to_source() for expr in new_ctx.expressions_by_type(int)])  # doctest: +ELLIPSIS
+        [...'factorial(n - k)'...]
+
+        """
+        new_ctx = Context(ctx.expressions[:], ctx.namespace)
+        for _ in range(self.expression_levels):
+            new_ctx.extend(list(self.properties(new_ctx)))
+            new_ctx.extend(list(self.unary_ops(new_ctx)))
+            new_ctx.extend(list(self.binary_ops(new_ctx)))
+            new_ctx.extend(list(self.calls(new_ctx)))
+            new_ctx.extend(list(self.comparisons(new_ctx)))
+            new_ctx.extend(list(self.bool_ops(new_ctx)))
+        return new_ctx
+
+    def properties(self, ctx: Context) -> Iterator[AnnotatedExpression]:
+        """
+        Return all properties expressions for "self" if it's found.
+        """
+        if "self" in ctx.namespace:
+            self_expr = ctx.namespace["self"]
+            if hasattr(self_expr.annotation.type, "__annotations__"):
+                class_annotations = (
+                    self_expr.annotation.type.__annotations__
+                )  # type: Mapping[str,Type]
+                for attr_name, attr_type in class_annotations.items():
+                    yield AnnotatedExpression(
+                        ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr=attr_name,
+                            ctx=ast.Load(),
+                        ),
+                        TypeAnnotation(attr_type, None),
+                    )
+
     @property
     def commutative_operators(self) -> List[Type[ast.operator]]:
         """
         A list of commutative (order independed) operators for that instance.
 
-        >>> p = NaiveProgrammer(binary_operators=[ast.Add, ast.Sub, ast.Mult, ast.Div])
+        >>> p = ExpressionSpace(binary_operators=[ast.Add, ast.Sub, ast.Mult, ast.Div])
         >>> p.commutative_operators
         [<class '_ast.Add'>, <class '_ast.Mult'>]
         """
@@ -80,7 +128,7 @@ class NaiveProgrammer:
         """
         A list of non commutative (order dependent) binary operators for that instance.
 
-        >>> p = NaiveProgrammer(binary_operators=[ast.Add, ast.Sub, ast.Mult, ast.Div])
+        >>> p = ExpressionSpace(binary_operators=[ast.Add, ast.Sub, ast.Mult, ast.Div])
         >>> p.non_commutative_operators
         [<class '_ast.Sub'>, <class '_ast.Div'>]
         """
@@ -90,71 +138,18 @@ class NaiveProgrammer:
             if op not in self.cummitative_operator_set
         ]
 
-    def enrich_context(self, ctx: Context) -> Context:
-        """
-        Makes a new context with new expressions.
-
-        By default only using a comparison operator "==".
-
-        >>> ctx = Context.parse([], {'a': 'int', 'b': 'int'}, {})
-        >>> print(ctx)
-        expressions: {
-            <class 'int'>: ['a', 'b'],
-        }
-        >>> p = NaiveProgrammer()
-        >>> print(p.enrich_context(ctx))
-        expressions: {
-            <class 'int'>: ['a', 'b'],
-            <class 'bool'>: ['(a == b)'],
-        }
-
-        A more complexe example:
-
-        >>> from math import factorial
-        >>> ctx = Context.parse([], {'n': 'int', 'k': 'int', 'factorial': 'Callable[[int],int]'}, globals())
-        >>> p = NaiveProgrammer(
-        ...    unary_operators=[],
-        ...    compare_operators=[],
-        ...    binary_operators=[ast.Sub, ast.FloorDiv],
-        ...    expression_levels=2,
-        ... )
-        >>> p.compare_operators
-        []
-        >>> new_ctx = p.enrich_context(ctx)
-        >>> print([expr.to_source() for expr in new_ctx.expressions_by_type(int)])  # doctest: +ELLIPSIS
-        [...'n // factorial(n - k)'...
-
-        """
-        new_ctx = Context(ctx.expressions[:], ctx.namespace)
-        for _ in range(self.expression_levels):
-            new_ctx.extend(list(self.unary_ops(new_ctx)))
-            new_ctx.extend(list(self.binary_ops(new_ctx)))
-            new_ctx.extend(list(self.calls(new_ctx)))
-            new_ctx.extend(list(self.comparisons(new_ctx)))
-            new_ctx.extend(list(self.bool_ops(new_ctx)))
-        return new_ctx
-
     def unary_ops(self, ctx: Context) -> Iterator[AnnotatedExpression]:
         """
         Return all unary operation expression.
 
         >>> ctx = Context.parse([], {'a': 'int', 'b': 'int'}, {})
-        >>> p = NaiveProgrammer(unary_operators=[ast.USub])
+        >>> p = ExpressionSpace(unary_operators=[ast.USub])
         >>> for expr in p.unary_ops(ctx):
         ...    print(expr.to_source())
         (-a)
         (-b)
-
-        #  TODO:
-        #  Also includes all callables with one argument
-
-        #  >>> from math import factorial
-        #  >>> ctx = Context.parse([], {'a', 'int', 'b': 'int', 'factorial': Callable[[int], int]}, globals())
-        #  >>> for expr in p.unary_ops(ctx):
-        #  ...     print(expr.to_source)
-        #  factorial(a)
-        #  factorial(b)
         """
+        # TODO: extend to all types
         exprs = ctx.expressions_by_type(int)
         for expr in exprs:
             for unary_operator in self.unary_operators:
@@ -168,7 +163,7 @@ class NaiveProgrammer:
         Generate binary operations such as "+" or "-" for all pairs of compatible expressions.
 
         >>> ctx = Context.parse([], {'a': 'int', 'b': 'int', 'x': 'float', 'y': 'float'}, {})
-        >>> p = NaiveProgrammer(binary_operators=[ast.Add, ast.Sub])
+        >>> p = ExpressionSpace(binary_operators=[ast.Add, ast.Sub])
         >>> for expr in p.binary_ops(ctx):
         ...    print(expr.to_source())
         (a + b)
@@ -181,6 +176,10 @@ class NaiveProgrammer:
         for type, expr_group in ctx.groupby_type():
             if type in (bool, Callable):
                 continue
+            # TODO: Allow tuple comparisons?
+            if TypeAnnotation(type).iterable:
+                continue
+
             for commutative_operator in self.commutative_operators:
                 for left, right in combinations(expr_group, 2):
                     yield AnnotatedExpression(
@@ -203,7 +202,7 @@ class NaiveProgrammer:
         Return first level callables.
         >>> from typing import Callable
         >>> ctx = Context.parse([], {'a': 'int', 'b': 'int', 'pow': 'Callable[[int, int], int]'}, globals())
-        >>> p = NaiveProgrammer()
+        >>> p = ExpressionSpace()
         >>> for expr in p.calls(ctx):
         ...    print(expr.to_source())
         pow(a, a)
@@ -212,7 +211,7 @@ class NaiveProgrammer:
         pow(b, b)
 
         >>> ctx = Context.parse([], {'a': 'bool', 'b': 'bool', 'i': 'int', 'f': 'Callable[[bool, int, bool], int]'}, globals())
-        >>> p = NaiveProgrammer()
+        >>> p = ExpressionSpace()
         >>> for expr in p.calls(ctx):
         ...    print(expr.to_source())
         f(a, i, a)
@@ -220,10 +219,7 @@ class NaiveProgrammer:
         f(b, i, a)
         f(b, i, b)
         """
-        exprs_by_type = defaultdict(
-            list
-        )  # type: MutableMapping[Type, List[AnnotatedExpression]]
-        exprs_by_type.update(ctx.groupby_type())
+        exprs_by_type = dict(ctx.groupby_type())
         for callable in ctx.callables():
             type_matchd_args = [
                 exprs_by_type[arg.type] for arg in callable.annotation.callable_args
@@ -244,7 +240,7 @@ class NaiveProgrammer:
         Generate boolean operations for all pairs of boolean expressions.
 
         >>> ctx = Context.parse([('(i<j)', 'bool')], {'a': 'bool', 'b': 'bool'}, {})
-        >>> p = NaiveProgrammer()
+        >>> p = ExpressionSpace()
         >>> for expr in p.bool_ops(ctx):
         ...    print(expr.to_source())
         (a and b)
@@ -270,7 +266,7 @@ class NaiveProgrammer:
         Generate comparison for all combinations for comparable types.
 
         >>> ctx = Context.parse([], {'a': 'int', 'b': 'int'}, {})
-        >>> p = NaiveProgrammer(compare_operators=[ast.Lt, ast.Eq])
+        >>> p = ExpressionSpace(compare_operators=[ast.Lt, ast.Eq])
         >>> for expr in p.comparisons(ctx):
         ...    print(expr.to_source())
         (a < b)
@@ -287,241 +283,3 @@ class NaiveProgrammer:
                         ),
                         TypeAnnotation(bool),
                     )
-
-
-class BooleanExpressionProgrammer:
-    """
-    Generate all possible boolean expressions for a list of boolean expresions.
-
-    This gives us 2^(2^n) boolean expressions where `n` is the size of `booleans`.
-    """
-
-    def __init__(self):
-        pass
-
-    def expressions(self, context: Context) -> Iterator[AnnotatedExpression]:
-        """
-        Generate all boolean expressions from all boolean expressions and
-        variables in `context`.
-
-        >>> ctx = Context.parse([], {'a': 'bool', 'b': 'bool'}, {})
-        >>> p = BooleanExpressionProgrammer()
-        >>> boolean_expressions = list(p.expressions(ctx))
-        >>> [expr.to_source() for expr in boolean_expressions]  # doctest: +ELLIPSIS
-        ['(a and b)', '(not a and b)', ...'(a and b or not a and b or a and not b or not a and not b)']
-
-        The number of such boolean expressions will be equal to `2^{2^n}`.
-        Where `n` is the number of boolean variables.
-
-        >>> len(boolean_expressions)
-        15
-        """
-        boolean_exprs = list(context.boolean_expressions())
-        minterms = list(self.minterms(boolean_exprs))
-        for i in range(2 ** len(minterms)):
-            terms = []
-            for j, minterm in enumerate(minterms):
-                if (i >> j) % 2 == 1:
-                    terms.append(minterm.expr)
-            if len(terms) == 0:
-                continue
-            if len(terms) == 1:
-                yield AnnotatedExpression(terms[0], TypeAnnotation.parse("bool", {}))
-            else:
-                yield AnnotatedExpression(
-                    ast.BoolOp(op=ast.Or(), values=terms),
-                    TypeAnnotation.parse("bool", {}),
-                )
-
-    def minterms(
-        self, boolean_exprs: Sequence[AnnotatedExpression]
-    ) -> Iterator[AnnotatedExpression]:
-        """
-        Generate all minterm (AND operation) expressions
-
-        >>> parse = AnnotatedExpression.parse
-        >>> exprs = [parse('a', 'bool', {}), parse('b', 'bool', {})]
-        >>> p = BooleanExpressionProgrammer()
-        >>> [expr.to_source() for expr in p.minterms(exprs)]
-        ['(a and b)', '(not a and b)', '(a and not b)', '(not a and not b)']
-        """
-        n = 2 ** len(boolean_exprs)
-        for i in range(n):
-            values = []  # type: List[ast.expr]
-            for j, boolean_expr in enumerate(boolean_exprs):
-                if (i >> j) % 2 == 1:
-                    values.append(ast.UnaryOp(op=ast.Not(), operand=boolean_expr.expr))
-                else:
-                    values.append(boolean_expr.expr)
-            yield AnnotatedExpression(
-                ast.BoolOp(op=ast.And(), values=values),
-                TypeAnnotation.parse("bool", {}),
-            )
-
-
-class MathematicalSpace:
-    """
-    Mathematical expressions space includes all operations with binary and unitary operators.
-    a + b
-    a * b
-    -a, -b
-    """
-
-    def __init__(self, **options):
-        ...
-
-    def expressions(self, context: Context) -> Iterator[AnnotatedExpression]:
-        # integers = context.expressions_by_type(int)
-        # # negations
-        # for expr in integers:
-        #     ...
-
-        # # binary operations
-        # for a, b in combinations(integers, 2):
-        #     a * b
-        ...
-
-
-class FunctionalCompositionSpace:
-    """
-    Functional composition space
-
-    Using concept like `map` and `sum`
-    """
-
-    def __init__(self, **options):
-        ...
-
-    def expressions(self, context: Context) -> Iterator[AnnotatedExpression]:
-        """
-        Build function calls
-
-        >>> from typing import Callable
-        >>> from operator import sub
-        >>> ctx = Context.parse([], {'sub': 'Callable[[int,int], int]', 'a': 'int', 'b': 'int'}, globals())
-        >>> space = FunctionalCompositionSpace()
-        >>> for expr in space.expressions(ctx):
-        ...     print(expr)
-        <AnnotatedExpression('sub(a, a)', <class 'int'>)>
-        <AnnotatedExpression('sub(a, b)', <class 'int'>)>
-        <AnnotatedExpression('sub(b, a)', <class 'int'>)>
-        <AnnotatedExpression('sub(b, b)', <class 'int'>)>
-        """
-        exprs_by_type = defaultdict(
-            list
-        )  # type: MutableMapping[Type, List[AnnotatedExpression]]
-        exprs_by_type.update(context.groupby_type())
-
-        call_expressions = set()  # type: Set[AnnotatedExpression]
-
-        d = deque()  # type: Deque[AnnotatedExpression]
-        for callable in context.callables():
-            type_matchd_args = [
-                exprs_by_type[arg.type] for arg in callable.annotation.callable_args
-            ]
-            for exprs_for_args in product(*type_matchd_args):
-                call_expression = AnnotatedExpression(
-                    ast.Call(
-                        func=callable.expr,
-                        args=[expr.expr for expr in exprs_for_args],
-                        keywords=[],
-                    ),
-                    callable.annotation.callable_returns,
-                )
-                d.append(call_expression)
-                call_expressions.add(call_expression)
-                exprs_by_type[call_expression.annotation.type].append(call_expression)
-
-        while d:
-            call = d.popleft()
-            yield call
-        #    for arg in call.args:
-        #        call_expression = AnnotatedExpression(
-        #            ast.Call(
-        #                func=call.expr.func,
-        #                arts=[...],
-        #                keywords=[],
-        #            ),
-        #            call.annotation,
-        #        )
-        #        d.append(call_expression)
-        #        call_expression.append(call_expression)
-
-
-class ObjectCompositionSpace:
-    """
-    Object composition space
-    """
-
-    def expressions(self, context: Context) -> Iterator[AnnotatedExpression]:
-        """
-        Generate annotated expression that build objects.
-        """
-
-    def statements(self, context: Context) -> Iterator[ast.stmt]:
-        """
-        Assignments
-        """
-        ...
-
-
-class StructuredProgrammingSpace:
-    """
-    Structured programming space
-    """
-
-    non_comparable_types = (bool, Callable)
-
-    def __init__(self, globals, compare_operators=(ast.Gt,)):
-        self.compare_operators = compare_operators
-        self.globals = globals
-
-    def expressions(self, context: Context) -> Iterator[AnnotatedExpression]:
-        """
-        Generate all comparison expressions with self.compare_operators.
-
-        The comparisons are made between objects of the same type.
-        """
-        for _, expr_group in context.groupby_type(exclude=(bool, Callable)):
-            for left, right in combinations(expr_group, 2):
-                for operator in self.compare_operators:
-                    yield AnnotatedExpression(
-                        ast.Compare(
-                            left=left.expr, ops=[operator()], comparators=[right.expr]
-                        ),
-                        TypeAnnotation(bool, None),
-                    )
-
-    def statements(self, context: Context) -> Iterator[ast.stmt]:
-        yield from self.if_statements(context)
-        yield from self.for_statements(context)
-
-    def if_statements(self, context: Context) -> Iterator[ast.stmt]:
-        """
-        Generate if statements for all boolean expressions
-        """
-        for bool_expr in context.boolean_expressions():
-            yield ast.If(
-                test=bool_expr.expr,
-                body=[context.ellipsis()],
-                orelse=[context.ellipsis()],
-            )
-
-    def for_statements(self, context: Context) -> Iterator[ast.stmt]:
-        """
-        Generate for statements for all iterable expressions
-        """
-        for iterable in context.iterables():
-            iteration_var = AnnotatedExpression(
-                expr=ast.Name(id="item", ctx=ast.Load()),
-                annotation=TypedAnnotation(iterable.annotation.arg),
-            )
-            iter_context = context + [iteration_var]
-            iter_context = self.enrich_context(iter_context)
-
-            yield ast.For(
-                target=ast.Name(id="item", ctx=ast.Store()),
-                iter=iterable.expr,
-                body=[iter_context.ellipsis()],
-                orelse=[],
-            )
